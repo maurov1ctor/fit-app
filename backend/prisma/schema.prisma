@@ -1,4 +1,4 @@
-// schema.prisma (atualizado para incluir RefreshToken)
+// schema.prisma - FitAPP Backend Architecture
 generator client {
   provider = "prisma-client-js"
 }
@@ -8,16 +8,62 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Enum para roles de usuário
+// ========================================
+// ENUMS
+// ========================================
+
 enum UserRole {
-  PROFESSOR
-  ALUNO
   ADMIN
+  TRAINER
+  STUDENT
 }
 
-// ... (outros enums e modelos do schema anterior)
+enum DifficultyLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+  EXPERT
+}
 
-// Modelo para refresh tokens
+enum ExerciseCategory {
+  STRENGTH
+  CARDIO
+  FLEXIBILITY
+  BALANCE
+  ENDURANCE
+}
+
+enum WorkoutStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+// ========================================
+// MODELS
+// ========================================
+
+model User {
+  id        String   @id @default(uuid()) @db.Uuid
+  email     String   @unique
+  password  String
+  firstName String
+  lastName  String
+  role      UserRole
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relacionamentos
+  refreshTokens RefreshToken[]
+  student       Student?
+  trainer       Trainer?
+
+  @@index([email])
+  @@index([role])
+}
+
 model RefreshToken {
   id        String   @id @default(uuid()) @db.Uuid
   token     String   @unique
@@ -25,18 +71,170 @@ model RefreshToken {
   expiresAt DateTime
   createdAt DateTime @default(now())
 
-  // Relacionamento
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  // Índices
   @@index([userId])
   @@index([expiresAt])
 }
 
-// Adicionar ao modelo User
-model User {
-  // ... campos existentes
-  refreshTokens RefreshToken[]
+// ========================================
+// STUDENTS
+// ========================================
 
-  // ... relacionamentos existentes
+model Student {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @unique @db.Uuid
+  age       Int?
+  weight    Float?   // em kg
+  height    Float?   // em cm
+  goal      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relacionamentos
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workoutPlans Workout[]
+  workoutLogs  WorkoutLog[]
+
+  @@index([userId])
+}
+
+// ========================================
+// TRAINERS
+// ========================================
+
+model Trainer {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @unique @db.Uuid
+  specialization String?
+  certification  String?
+  yearsExperience Int      @default(0)
+  bio            String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relacionamentos
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workouts Workout[]
+
+  @@index([userId])
+}
+
+// ========================================
+// WORKOUTS
+// ========================================
+
+model Workout {
+  id          String   @id @default(uuid()) @db.Uuid
+  title       String
+  description String?
+  difficulty  DifficultyLevel
+  duration    Int      // em minutos
+  studentId   String   @db.Uuid
+  trainerId   String   @db.Uuid
+  status      WorkoutStatus @default(SCHEDULED)
+  scheduledAt DateTime?
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relacionamentos
+  student     Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  trainer     Trainer      @relation(fields: [trainerId], references: [id], onDelete: SetNull)
+  exercises   WorkoutExercise[]
+  logs        WorkoutLog[]
+
+  @@index([studentId])
+  @@index([trainerId])
+  @@index([status])
+  @@index([scheduledAt])
+}
+
+// ========================================
+// EXERCISES
+// ========================================
+
+model Exercise {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String
+  description String?
+  category    ExerciseCategory
+  difficulty  DifficultyLevel
+  imageUrl    String?
+  videoUrl    String?
+  instructions String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relacionamentos
+  workouts WorkoutExercise[]
+
+  @@index([category])
+  @@index([difficulty])
+}
+
+model WorkoutExercise {
+  id        String   @id @default(uuid()) @db.Uuid
+  workoutId String   @db.Uuid
+  exerciseId String   @db.Uuid
+  sets      Int
+  reps      Int?
+  duration  Int?     // em segundos (para exercícios de tempo)
+  weight    Float?   // em kg
+  order     Int      // ordem dentro do workout
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relacionamentos
+  workout  Workout  @relation(fields: [workoutId], references: [id], onDelete: Cascade)
+  exercise Exercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+
+  @@unique([workoutId, exerciseId])
+  @@index([workoutId])
+  @@index([exerciseId])
+}
+
+// ========================================
+// WORKOUT LOGS
+// ========================================
+
+model WorkoutLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  workoutId String   @db.Uuid
+  studentId String   @db.Uuid
+  startedAt DateTime
+  endedAt   DateTime?
+  notes     String?
+  completed Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relacionamentos
+  workout       Workout        @relation(fields: [workoutId], references: [id], onDelete: Cascade)
+  student       Student        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  exerciseLogs  ExerciseLog[]
+
+  @@index([workoutId])
+  @@index([studentId])
+  @@index([startedAt])
+}
+
+model ExerciseLog {
+  id            String   @id @default(uuid()) @db.Uuid
+  workoutLogId  String   @db.Uuid
+  exerciseId    String   @db.Uuid
+  setsCompleted Int?
+  repsCompleted Int?
+  weightUsed    Float?
+  duration      Int?
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relacionamentos
+  workoutLog WorkoutLog @relation(fields: [workoutLogId], references: [id], onDelete: Cascade)
+
+  @@index([workoutLogId])
+  @@index([exerciseId])
 }
